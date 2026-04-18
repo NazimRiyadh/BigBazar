@@ -1,13 +1,12 @@
 import express from "express";
-import { config } from "dotenv";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import fileUpload from "express-fileupload";
 import { errorMiddleware } from "./middlewares/errorMiddleware.js";
+import authRoutes from "./routers/authRoutes.js";
 
 const app = express();
 
-config({ path: "./config/config.env" });
 const { createTable } = await import("./utils/createTable.js");
 
 app.use(
@@ -19,7 +18,7 @@ app.use(
 );
 
 app.use(express.json());
-app.use(cookieParser);
+app.use(cookieParser());
 app.use(express.urlencoded({ extended: true }));
 
 app.use(
@@ -28,6 +27,8 @@ app.use(
     tempFileDir: "./uploads",
   }),
 );
+
+app.use("/api/v1/auth", authRoutes);
 
 createTable();
 
