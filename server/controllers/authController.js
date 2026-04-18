@@ -7,6 +7,7 @@ import { generateResetPasswordToken } from "../utils/generateResetPasswordToken.
 import { sendEmail } from "../utils/sendEmail.js";
 import { generateEmailPasswordForgotTemplate } from "../utils/generateEmailPasswordForgotTemplate.js";
 import crypto from "crypto";
+import { v2 as cloudinary } from "cloudinary";
 
 export const registerUser = catchAsyncMiddleware(async (req, res, next) => {
   const { name, email, password } = req.body;
@@ -175,4 +176,54 @@ export const updatePassword = catchAsyncMiddleware(async (req, res, next) => {
     user.rows[0].id,
   ]);
   sendToken(user.rows[0], 200, res);
+});
+
+export const updateProfile = catchAsyncMiddleware(async (req, res, next) => {
+  const { name, email } = req.body;
+  if (!name || !email) {
+    return next(new ErrorHandler("Please enter all fields", 400));
+  }
+  const user = await db.query(`SELECT * FROM users WHERE id = $1`, [
+    req.user.id,
+  ]);
+  const isEmailAlreadyExists = await db.query(
+    `SELECT * FROM users WHERE email = $1 AND id != $2`,
+    [email, req.user.id],
+  );
+  if (isEmailAlreadyExists.rows.length > 0) {
+    return next(new ErrorHandler("Email already exists", 400));
+  }
+
+  let avatar = {};
+  if (req.files && req.files.avatar) {
+    const avatarFile = req.files.avatar;
+
+    const result = await cloudinary.uploader.upload(avatarFile.tempFilePath, {
+      folder: "bigbazar/profile/avatars",
+      width: 150,
+      height: 150,
+      crop: "fill",
+    });
+
+    if (user.rows[0].avatar && user.rows[0].avatar.public_id) {
+      await cloudinary.uploader.destroy(user.rows[0].avatar.public_id);
+    }
+    avatar = {
+      public_id: result.public_id,
+      url: result.secure_url,
+    };
+  }
+  let updatedUser;
+  if (avatar.public_id) {
+    updatedUser = await db.query(
+      `UPDATE users SET name = $1, email = $2, avatar = $3 WHERE id = $4 RETURNING *`,
+      [name, email, avatar, req.user.id],
+    );
+  } else {
+    updatedUser = await db.query(
+      `UPDATE users SET name = $1, email = $2 WHERE id = $3 RETURNING *`,
+      [name, email, req.user.id],
+    );
+  }
+  sendToken(updatedUser.rows[0], 200, res);
 });
