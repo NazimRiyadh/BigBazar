@@ -198,3 +198,123 @@ export const updateProduct = catchAsyncMiddleware(async (req, res, next) => {
     product: updatedProduct.rows[0],
   });
 });
+
+export const deleteProduct = catchAsyncMiddleware(async (req, res, next) => {
+  const { productId } = req.params;
+  const product = await db.query(`SELECT * FROM products WHERE id=$1`, [
+    productId,
+  ]);
+  if (!product.rows.length) {
+    return next(new ErrorHandler("Product not found", 404));
+  }
+  const images = product.rows[0].images;
+  if (images.length > 0) {
+    for (const image of images) {
+      await cloudinary.uploader.destroy(image.public_id);
+    }
+  }
+  const deleteProduct = await db.query(
+    `DELETE FROM products WHERE id=$1 RETURNING *`,
+    [productId],
+  );
+  if (!deleteProduct.rows.length) {
+    return next(new ErrorHandler("Product not deleted", 404));
+  }
+  res.status(200).json({
+    success: true,
+    message: "Product deleted successfully",
+    product: deleteProduct.rows[0],
+  });
+});
+
+export const fetchSingleProduct = catchAsyncMiddleware(
+  async (req, res, next) => {
+    const { productId } = req.params;
+
+    const result = await db.query(
+      `
+        SELECT p.*,
+        COALESCE(
+        json_agg(
+        json_build_object(
+            'review_id', r.id,
+            'rating', r.rating,
+            'comment', r.comment,
+            'reviewer', json_build_object(
+            'id', u.id,
+            'name', u.name,
+            'avatar', u.avatar
+            )) 
+        ) FILTER (WHERE r.id IS NOT NULL), '[]') AS reviews
+         FROM products p
+         LEFT JOIN reviews r ON p.id = r.product_id
+         LEFT JOIN users u ON r.user_id = u.id
+         WHERE p.id  = $1
+         GROUP BY p.id`,
+      [productId],
+    );
+
+    res.status(200).json({
+      success: true,
+      message: "Product fetched successfully.",
+      product: result.rows[0],
+    });
+  },
+);
+
+export const postProductReview = catchAsyncMiddleware(
+  async (req, res, next) => {
+    const { productId } = req.params;
+    const { rating, comment } = req.body;
+    if (!rating || !comment) {
+      return next(new ErrorHandler("Please enter all the fields", 400));
+    }
+    const purchasedQuery = `
+    SELECT oi.product_id
+    FROM order_items oi
+    JOIN orders o ON o.id = oi.order_id
+    JOIN payments p ON p.order_id = o.id
+    WHERE o.buyer_id = $1
+    AND oi.product_id = $2
+    AND p.payment_status = 'Paid'
+    LIMIT 1 
+    `;
+    const purchased = await db.query(purchasedQuery, [req.user.id, productId]);
+    if (!purchased.rows.length) {
+      return next(new ErrorHandler("You have not purchased this product", 403));
+    }
+    const existingReviewQuery = `
+    SELECT * FROM reviews WHERE user_id = $1 AND product_id = $2
+    `;
+    const existingReview = await db.query(existingReviewQuery, [
+      req.user.id,
+      productId,
+    ]);
+    if (existingReview.rows.length) {
+      review = await db.query(
+        `UPDATE reviews SET rating=$1,comment=$2 WHERE user_id=$3 AND product_id=$4 RETURNING *`,
+        [rating, comment, req.user.id, productId],
+      );
+    } else {
+      const review = await db.query(
+        `INSERT INTO reviews (user_id, product_id, rating, comment) VALUES ($1, $2, $3, $4) RETURNING *`,
+        [req.user.id, productId, rating, comment],
+      );
+    }
+
+    const averageRatingQuery = `
+    SELECT AVG(rating) FROM reviews WHERE product_id = $1
+    `;
+    const averageRating = await db.query(averageRatingQuery, [productId]);
+    const updatedProduct = await db.query(
+      `UPDATE products SET ratings=$1 WHERE id=$2 RETURNING *`,
+      [averageRating.rows[0].avg, productId],
+    );
+
+    res.status(201).json({
+      success: true,
+      message: "Review posted successfully",
+      review: review.rows[0],
+    });
+  },
+);
