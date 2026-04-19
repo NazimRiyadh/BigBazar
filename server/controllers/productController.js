@@ -171,3 +171,30 @@ export const fetchAllProducts = catchAsyncMiddleware(async (req, res, next) => {
     topRatedProducts: topRatedResult.rows,
   });
 });
+
+export const updateProduct = catchAsyncMiddleware(async (req, res, next) => {
+  const { productId } = req.params;
+  const { name, description, price, category, stock } = req.body;
+
+  if (!name || !description || !price || !category || !stock) {
+    return next(new ErrorHandler("Please enter all the fields", 400));
+  }
+
+  const product = await db.query(`SELECT * FROM products WHERE id=$1`, [
+    productId,
+  ]);
+  if (!product.rows.length) {
+    return next(new ErrorHandler("Product not found", 404));
+  }
+
+  const updatedProduct = await db.query(
+    `UPDATE products SET name=$1,description=$2,price=$3,category=$4,stock=$5 WHERE id=$6 RETURNING *`,
+    [name, description, price, category, stock, productId],
+  );
+
+  res.status(200).json({
+    success: true,
+    message: "Product updated successfully",
+    product: updatedProduct.rows[0],
+  });
+});
