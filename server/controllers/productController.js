@@ -233,31 +233,47 @@ export const fetchSingleProduct = catchAsyncMiddleware(
 
     const result = await db.query(
       `
-        SELECT p.*,
+      SELECT 
+        p.*,
         COALESCE(
-        json_agg(
-        json_build_object(
-            'review_id', r.id,
-            'rating', r.rating,
-            'comment', r.comment,
-            'reviewer', json_build_object(
-            'id', u.id,
-            'name', u.name,
-            'avatar', u.avatar
-            )) 
-        ) FILTER (WHERE r.id IS NOT NULL), '[]') AS reviews
-         FROM products p
-         LEFT JOIN reviews r ON p.id = r.product_id
-         LEFT JOIN users u ON r.user_id = u.id
-         WHERE p.id  = $1
-         GROUP BY p.id`,
+          (SELECT jsonb_agg(                          
+              jsonb_build_object(                     
+                'review_id', r.id,
+                'rating', r.rating,
+                'comment', r.comment,
+                'created_at', r.created_at,           
+                'reviewer', jsonb_build_object(
+                  'id', u.id,
+                  'name', u.name,
+                  'avatar', u.avatar
+                )
+              )
+              ORDER BY r.created_at DESC                
+           )
+           FROM reviews r
+           LEFT JOIN users u ON r.user_id = u.id
+           WHERE r.product_id = p.id
+          ),
+          '[]'::jsonb                               
+        ) AS reviews
+      FROM products p
+      WHERE p.id = $1;
+      `,
       [productId],
     );
+
+    const product = result.rows[0];
+
+    if (!product) {
+      return next(
+        new ErrorResponse(`Product not found with id: ${productId}`, 404),
+      );
+    }
 
     res.status(200).json({
       success: true,
       message: "Product fetched successfully.",
-      product: result.rows[0],
+      product: product,
     });
   },
 );
@@ -318,3 +334,31 @@ export const postProductReview = catchAsyncMiddleware(
     });
   },
 );
+
+export const deleteReview = catchAsyncMiddleware(async (req, res, next) => {
+  const { productId } = req.params;
+
+  const review = await db.query(
+    "Delete from reviews where user_id=$1 and product_id=$2 RETURNING *",
+    [req.user.id, productId],
+  );
+
+  if (!review.rows.length) {
+    return next(new ErrorHandler("Review not found", 404));
+  }
+
+  const averageRatingQuery = `
+    SELECT AVG(rating) FROM reviews WHERE product_id = $1
+    `;
+  const averageRating = await db.query(averageRatingQuery, [productId]);
+  const updatedProduct = await db.query(
+    `UPDATE products SET ratings=$1 WHERE id=$2 RETURNING *`,
+    [averageRating.rows[0].avg, productId],
+  );
+
+  res.status(200).json({
+    success: true,
+    message: "Review deleted successfully",
+    review: updateProduct.rows[0],
+  });
+});
