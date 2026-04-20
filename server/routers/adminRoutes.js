@@ -1,5 +1,5 @@
 import express from "express";
-import { getAllUsers } from "../controllers/adminController.js";
+import { getAllUsers, deleteUser } from "../controllers/adminController.js";
 import {
   isAuthenticated,
   authorizedRoles,
@@ -12,6 +12,13 @@ router.get(
   isAuthenticated,
   authorizedRoles("admin"),
   getAllUsers,
+);
+
+router.delete(
+  "/delete-user/:userId",
+  isAuthenticated,
+  authorizedRoles("admin"),
+  deleteUser,
 );
 
 export default router;
