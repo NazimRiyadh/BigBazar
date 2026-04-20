@@ -47,7 +47,7 @@ export const getAllUsers = catchAsyncMiddleware(async (req, res, next) => {
 });
 
 export const deleteUser = catchAsyncMiddleware(async (req, res, next) => {
-  const { userId: id } = req.params;
+  const { id } = req.params;
 
   const userResult = await db.query(
     `SELECT id, avatar FROM users WHERE id = $1`,
@@ -80,7 +80,7 @@ export const deleteUser = catchAsyncMiddleware(async (req, res, next) => {
   });
 });
 
-export const dashboardStats = catchAsyncErrors(async (req, res, next) => {
+export const dashboardStats = catchAsyncMiddleware(async (req, res, next) => {
   const today = new Date();
   const todayDate = today.toISOString().split("T")[0];
   const yesterday = new Date(today);
