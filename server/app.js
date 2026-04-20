@@ -5,6 +5,7 @@ import fileUpload from "express-fileupload";
 import { errorMiddleware } from "./middlewares/errorMiddleware.js";
 import authRoutes from "./routers/authRoutes.js";
 import productRoutes from "./routers/productRoutes.js";
+import adminRoutes from "./routers/adminRoutes.js";
 import { globalLimiter } from "./utils/rateLimiter.js";
 
 const app = express();
@@ -33,6 +34,7 @@ app.use(
 app.use("/api", globalLimiter);
 app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/product", productRoutes);
+app.use("/api/v1/admin", adminRoutes);
 
 createTable();
 
