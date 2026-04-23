@@ -1,21 +1,10 @@
 import { catchAsyncErrors } from "../middlewares/catchAsyncMiddleware.js";
 import db from "../database/db.js";
-import { getEmbedding, getGroundedResponse } from "../utils/geminiService.js";
+import { getEmbedding, reformulateQuery, streamGroundedResponse } from "../utils/geminiService.js";
+import { searchSimilarProducts, upsertProductVector } from "../utils/pineconeService.js";
 import ErrorHandler from "../middlewares/errorMiddleware.js";
 
-/**
- * Cosine similarity between two vectors.
- * Returns a value between -1 and 1 (1 = identical).
- */
-function cosineSimilarity(a, b) {
-  let dot = 0, normA = 0, normB = 0;
-  for (let i = 0; i < a.length; i++) {
-    dot += a[i] * b[i];
-    normA += a[i] * a[i];
-    normB += b[i] * b[i];
-  }
-  return dot / (Math.sqrt(normA) * Math.sqrt(normB));
-}
+// Using native pgvector for similarity search
 
 /**
  * Main Chat Endpoint — RAG Pipeline
@@ -24,48 +13,48 @@ function cosineSimilarity(a, b) {
  * Flow: Query → Embed → Retrieve → Augment → Generate
  */
 export const chat = catchAsyncErrors(async (req, res, next) => {
-  const { message } = req.body;
+  const { message, history = [] } = req.body;
   if (!message) return next(new ErrorHandler("Message is required", 400));
 
-  // 1. Generate query embedding via Gemini
-  const queryEmbedding = await getEmbedding(message);
+  // Set up Server-Sent Events (SSE) headers
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.flushHeaders(); // Tell client that streaming has started
 
-  // 2. Retrieve all products with embeddings
-  const { rows: allProducts } = await db.query(
-    `SELECT id, name, description, price, category, stock, embedding
-     FROM products 
-     WHERE embedding IS NOT NULL AND stock > 0`
-  );
+  try {
+    // 1. Query Reformulation (Intent recognition based on history)
+    const standaloneQuery = await reformulateQuery(history, message);
 
-  // 3. Rank by cosine similarity (app-layer vector search)
-  const ranked = allProducts
-    .map(p => ({
-      ...p,
-      similarity: cosineSimilarity(queryEmbedding, p.embedding),
-    }))
-    .sort((a, b) => b.similarity - a.similarity)
-    .slice(0, 5); // Top 5
+    // 2. Generate embedding for the standalone query via Gemini
+    const queryEmbedding = await getEmbedding(standaloneQuery);
 
-  // 4. Augment: Build grounded context from top results
-  const context = ranked.length > 0 
-    ? ranked.map(p => 
-        `- ${p.name}: ${p.description} (Price: $${p.price}, Category: ${p.category})`
-      ).join("\n")
-    : "No relevant products found in our inventory.";
+    // 3. Search Pinecone for similar products
+    const ranked = await searchSimilarProducts(queryEmbedding, 5);
 
-  // 5. Generate: AI response grounded in context
-  const aiResponse = await getGroundedResponse(message, context);
-
-  res.status(200).json({
-    success: true,
-    response: aiResponse,
-    recommendations: ranked.map(p => ({
+    // Send recommendations first as a special event
+    const recommendations = ranked.map(p => ({
       id: p.id,
       name: p.name,
       price: p.price,
-      similarity: parseFloat(p.similarity).toFixed(4),
-    })),
-  });
+      similarity: parseFloat(p.score).toFixed(4),
+    }));
+    res.write(`event: recommendations\ndata: ${JSON.stringify(recommendations)}\n\n`);
+
+    // 5. Augment: Build grounded context from top results
+    const context = ranked.length > 0 
+      ? ranked.map(p => 
+          `- ${p.name}: ${p.description} (Price: $${p.price}, Category: ${p.category})`
+        ).join("\n")
+      : "No relevant products found in our inventory.";
+
+    // 6. Generate: Stream AI response grounded in context
+    await streamGroundedResponse(history, message, context, res);
+  } catch (error) {
+    console.error("Chat Stream Error:", error);
+    res.write(`event: error\ndata: ${JSON.stringify({ message: "Internal Server Error during streaming" })}\n\n`);
+    res.end();
+  }
 });
 
 /**
@@ -75,8 +64,9 @@ export const chat = catchAsyncErrors(async (req, res, next) => {
  * Generates embeddings for all products that haven't been indexed yet.
  */
 export const batchIndex = catchAsyncErrors(async (req, res, next) => {
+  // Fetch all products from Postgres
   const { rows: products } = await db.query(
-    "SELECT id, name, description FROM products WHERE embedding IS NULL"
+    "SELECT id, name, description, price, category FROM products"
   );
 
   let successCount = 0;
@@ -85,10 +75,13 @@ export const batchIndex = catchAsyncErrors(async (req, res, next) => {
       const text = `${product.name} ${product.description}`;
       const embedding = await getEmbedding(text);
       
-      await db.query("UPDATE products SET embedding = $1 WHERE id = $2", [
-        JSON.stringify(embedding),
-        product.id,
-      ]);
+      await upsertProductVector(product.id, embedding, {
+        name: product.name,
+        description: product.description,
+        price: product.price,
+        category: product.category,
+      });
+      
       successCount++;
     } catch (err) {
       console.error(`Failed to index product ${product.id}:`, err.message);
@@ -97,6 +90,6 @@ export const batchIndex = catchAsyncErrors(async (req, res, next) => {
 
   res.status(200).json({
     success: true,
-    message: `Successfully indexed ${successCount} out of ${products.length} products.`,
+    message: `Successfully indexed ${successCount} out of ${products.length} products to Pinecone.`,
   });
 });

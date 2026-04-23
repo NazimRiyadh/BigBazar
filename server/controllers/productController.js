@@ -3,6 +3,7 @@ import { catchAsyncErrors } from "../middlewares/catchAsyncMiddleware.js";
 import db from "../database/db.js";
 import { v2 as cloudinary } from "cloudinary";
 import { getEmbedding } from "../utils/geminiService.js";
+import { upsertProductVector } from "../utils/pineconeService.js";
 
 export const createProduct = catchAsyncErrors(async (req, res, next) => {
   const { name, description, price, category, stock } = req.body;
@@ -31,16 +32,15 @@ export const createProduct = catchAsyncErrors(async (req, res, next) => {
   }
 
   const textToIndex = `${name} ${description}`;
-  let embedding = null;
+  let rawEmbedding = null;
   try {
-    const rawEmbedding = await getEmbedding(textToIndex);
-    embedding = JSON.stringify(rawEmbedding);
+    rawEmbedding = await getEmbedding(textToIndex);
   } catch (error) {
     console.error("Failed to generate embedding for new product:", error);
   }
 
   const productResult = await db.query(
-    `INSERT INTO products (name, description, price, category, stock, images, created_by, embedding) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+    `INSERT INTO products (name, description, price, category, stock, images, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
     [
       name,
       description,
@@ -49,10 +49,20 @@ export const createProduct = catchAsyncErrors(async (req, res, next) => {
       stock,
       JSON.stringify(uploadImages),
       req.user.id,
-      embedding,
     ],
   );
   const product = productResult.rows[0];
+
+  // Upsert to Pinecone
+  if (rawEmbedding) {
+    await upsertProductVector(product.id, rawEmbedding, {
+      name,
+      description,
+      price,
+      category,
+    });
+  }
+
   res.status(201).json({
     success: true,
     message: "Product created successfully",
@@ -204,18 +214,26 @@ export const updateProduct = catchAsyncErrors(async (req, res, next) => {
   }
 
   const textToIndex = `${name} ${description}`;
-  let embedding = null;
+  let rawEmbedding = null;
   try {
-    const rawEmbedding = await getEmbedding(textToIndex);
-    embedding = JSON.stringify(rawEmbedding);
+    rawEmbedding = await getEmbedding(textToIndex);
   } catch (error) {
     console.error("Failed to generate embedding for updated product:", error);
   }
 
   const updatedProduct = await db.query(
-    `UPDATE products SET name=$1,description=$2,price=$3,category=$4,stock=$5,embedding=$6 WHERE id=$7 RETURNING *`,
-    [name, description, price, category, stock, embedding, productId],
+    `UPDATE products SET name=$1,description=$2,price=$3,category=$4,stock=$5 WHERE id=$6 RETURNING *`,
+    [name, description, price, category, stock, productId],
   );
+
+  if (rawEmbedding) {
+    await upsertProductVector(productId, rawEmbedding, {
+      name,
+      description,
+      price,
+      category,
+    });
+  }
 
   res.status(200).json({
     success: true,
