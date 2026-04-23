@@ -1,8 +1,8 @@
-import { catchAsyncMiddleware } from "../middlewares/catchAsyncMiddleware.js";
+import { catchAsyncErrors } from "../middlewares/catchAsyncMiddleware.js";
 import { generatePaymentIntent } from "../utils/generatePaymentIntent.js";
 import ErrorHandler from "../middlewares/errorMiddleware.js";
 
-export const processPayment = catchAsyncMiddleware(async (req, res, next) => {
+export const processPayment = catchAsyncErrors(async (req, res, next) => {
   const { orderId, totalPrice } = req.body;
 
   if (!orderId || !totalPrice) {
@@ -23,7 +23,7 @@ export const processPayment = catchAsyncMiddleware(async (req, res, next) => {
   });
 });
 
-export const sendStripePublishableKey = catchAsyncMiddleware(
+export const sendStripePublishableKey = catchAsyncErrors(
   async (req, res, next) => {
     res.status(200).json({
       stripePublishableKey: process.env.STRIPE_PUBLISHABLE_KEY,

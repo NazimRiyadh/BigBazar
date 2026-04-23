@@ -8,6 +8,7 @@ import productRoutes from "./routers/productRoutes.js";
 import adminRoutes from "./routers/adminRoutes.js";
 import orderRoutes from "./routers/orderRoutes.js";
 import paymentRoutes from "./routers/paymentRoutes.js";
+import chatbotRoutes from "./routers/chatbotRoutes.js";
 import { globalLimiter } from "./utils/rateLimiter.js";
 import Stripe from "stripe";
 import db from "./database/db.js";
@@ -136,6 +137,7 @@ app.use("/api/v1/product", productRoutes);
 app.use("/api/v1/admin", adminRoutes);
 app.use("/api/v1/order", orderRoutes);
 app.use("/api/v1/payment", paymentRoutes);
+app.use("/api", chatbotRoutes);
 
 createTable();
 
