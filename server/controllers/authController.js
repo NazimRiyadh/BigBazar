@@ -1,5 +1,5 @@
 import ErrorHandler from "../middlewares/errorMiddleware.js";
-import { catchAsyncMiddleware } from "../middlewares/catchAsyncMiddleware.js";
+import { catchAsyncErrors } from "../middlewares/catchAsyncMiddleware.js";
 import { sendToken } from "../utils/jwtToken.js";
 import db from "../database/db.js";
 import bcrypt from "bcrypt";
@@ -9,7 +9,7 @@ import { generateEmailPasswordForgotTemplate } from "../utils/generateEmailPassw
 import crypto from "crypto";
 import { v2 as cloudinary } from "cloudinary";
 
-export const registerUser = catchAsyncMiddleware(async (req, res, next) => {
+export const registerUser = catchAsyncErrors(async (req, res, next) => {
   const { name, email, password } = req.body;
   if (!name || !email || !password) {
     return next(new ErrorHandler("Please enter all the fields", 400));
@@ -32,7 +32,7 @@ export const registerUser = catchAsyncMiddleware(async (req, res, next) => {
   sendToken(result.rows[0], 201, res);
 });
 
-export const loginUser = catchAsyncMiddleware(async (req, res, next) => {
+export const loginUser = catchAsyncErrors(async (req, res, next) => {
   const { email, password } = req.body;
   if (!email || !password) {
     return next(new ErrorHandler("Please enter all the fields", 400));
@@ -54,7 +54,7 @@ export const loginUser = catchAsyncMiddleware(async (req, res, next) => {
   sendToken(user.rows[0], 200, res);
 });
 
-export const logoutUser = catchAsyncMiddleware(async (req, res, next) => {
+export const logoutUser = catchAsyncErrors(async (req, res, next) => {
   res.cookie("token", null, {
     expires: new Date(Date.now()),
     httpOnly: true,
@@ -65,14 +65,14 @@ export const logoutUser = catchAsyncMiddleware(async (req, res, next) => {
   });
 });
 
-export const getUser = catchAsyncMiddleware(async (req, res, next) => {
+export const getUser = catchAsyncErrors(async (req, res, next) => {
   res.status(200).json({
     success: true,
     user: req.user,
   });
 });
 
-export const forgotPassword = catchAsyncMiddleware(async (req, res, next) => {
+export const forgotPassword = catchAsyncErrors(async (req, res, next) => {
   const { email } = req.body;
   if (!email) {
     return next(new ErrorHandler("Please provide the email"));
@@ -120,7 +120,7 @@ export const forgotPassword = catchAsyncMiddleware(async (req, res, next) => {
   });
 });
 
-export const resetPassword = catchAsyncMiddleware(async (req, res, next) => {
+export const resetPassword = catchAsyncErrors(async (req, res, next) => {
   const { token } = req.params;
   const resetPasswordToken = crypto
     .createHash("sha256")
@@ -152,7 +152,7 @@ export const resetPassword = catchAsyncMiddleware(async (req, res, next) => {
   sendToken(user.rows[0], 200, res);
 });
 
-export const updatePassword = catchAsyncMiddleware(async (req, res, next) => {
+export const updatePassword = catchAsyncErrors(async (req, res, next) => {
   const { oldPassword, newPassword, confirmPassword } = req.body;
   if (!oldPassword || !newPassword || !confirmPassword) {
     return next(new ErrorHandler("Please enter all fields", 400));
@@ -178,7 +178,7 @@ export const updatePassword = catchAsyncMiddleware(async (req, res, next) => {
   sendToken(user.rows[0], 200, res);
 });
 
-export const updateProfile = catchAsyncMiddleware(async (req, res, next) => {
+export const updateProfile = catchAsyncErrors(async (req, res, next) => {
   const { name, email } = req.body;
   if (!name || !email) {
     return next(new ErrorHandler("Please enter all fields", 400));

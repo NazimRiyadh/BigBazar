@@ -1,7 +1,7 @@
-import db from "../database/db.js"; 
-export const createOrderItemTable=async ()=> {   
-    try {     
-        const query = `     
+import db from "../database/db.js";
+export const createOrderItemTable = async () => {
+  try {
+    const query = `     
             CREATE TABLE IF NOT EXISTS order_items (         
                 id UUID DEFAULT gen_random_uuid() PRIMARY KEY,         
                 order_id UUID NOT NULL,         
@@ -12,11 +12,11 @@ export const createOrderItemTable=async ()=> {
                 title TEXT NOT NULL,         
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,         
                 FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,         
-                FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE         
-            );`;    
-         await db.query(query);   
-    } catch (error) {     
-        console.error("❌ Failed To Create Ordered Items Table.", error);     
-        process.exit(1);   
-     } 
-}
+                FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL         
+            );`;
+    await db.query(query);
+  } catch (error) {
+    console.error("❌ Failed To Create Ordered Items Table.", error);
+    process.exit(1);
+  }
+};

@@ -1,9 +1,9 @@
-import { catchAsyncMiddleware } from "../middlewares/catchAsyncMiddleware.js";
+import { catchAsyncErrors } from "../middlewares/catchAsyncMiddleware.js";
 import ErrorHandler from "../middlewares/errorMiddleware.js";
 import db from "../database/db.js";
 import { v2 as cloudinary } from "cloudinary";
 
-export const getAllUsers = catchAsyncMiddleware(async (req, res, next) => {
+export const getAllUsers = catchAsyncErrors(async (req, res, next) => {
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 10;
 
@@ -46,7 +46,7 @@ export const getAllUsers = catchAsyncMiddleware(async (req, res, next) => {
   });
 });
 
-export const deleteUser = catchAsyncMiddleware(async (req, res, next) => {
+export const deleteUser = catchAsyncErrors(async (req, res, next) => {
   const { id } = req.params;
 
   const userResult = await db.query(
@@ -80,7 +80,7 @@ export const deleteUser = catchAsyncMiddleware(async (req, res, next) => {
   });
 });
 
-export const dashboardStats = catchAsyncMiddleware(async (req, res, next) => {
+export const dashboardStats = catchAsyncErrors(async (req, res, next) => {
   const today = new Date();
   const todayDate = today.toISOString().split("T")[0];
   const yesterday = new Date(today);
@@ -103,7 +103,7 @@ export const dashboardStats = catchAsyncMiddleware(async (req, res, next) => {
   const previousMonthEnd = new Date(today.getFullYear(), today.getMonth(), 0);
 
   const totalRevenueAllTimeQuery = await db.query(`
-    SELECT SUM(total_price) FROM orders WHERE paid_at IS NOT NULL    
+    SELECT SUM(total_price, 0) FROM orders WHERE paid_at IS NOT NULL    
     `);
   const totalRevenueAllTime =
     parseFloat(totalRevenueAllTimeQuery.rows[0].sum) || 0;
@@ -112,7 +112,7 @@ export const dashboardStats = catchAsyncMiddleware(async (req, res, next) => {
   const totalUsersCountQuery = await db.query(`
     SELECT COUNT(*) FROM users WHERE role = 'User'`);
 
-  const totalUsersCount = parseInt(totalUsersCountQuery.rows[0].count) || 0;
+  const totalUsersCount = parseInt(totalUsersCountQuery.rows[0].count);
 
   // Order Status Counts
   const orderStatusCountsQuery = await db.query(`
@@ -132,20 +132,20 @@ export const dashboardStats = catchAsyncMiddleware(async (req, res, next) => {
   // Today's Revenue
   const todayRevenueQuery = await db.query(
     `
-    SELECT SUM(total_price) FROM orders WHERE created_at::date = $1 AND paid_at IS NOT NULL
+    SELECT SUM(total_price,0) FROM orders WHERE created_at::date = $1 AND paid_at IS NOT NULL
     `,
     [todayDate],
   );
-  const todayRevenue = parseFloat(todayRevenueQuery.rows[0].sum) || 0;
+  const todayRevenue = parseFloat(todayRevenueQuery.rows[0].sum);
 
   // Yesterday's Revenue
   const yesterdayRevenueQuery = await db.query(
     `
-    SELECT SUM(total_price) FROM orders WHERE created_at::date = $1 AND paid_at IS NOT NULL  
+    SELECT SUM(total_price,0) FROM orders WHERE created_at::date = $1 AND paid_at IS NOT NULL  
     `,
     [yesterdayDate],
   );
-  const yesterdayRevenue = parseFloat(yesterdayRevenueQuery.rows[0].sum) || 0;
+  const yesterdayRevenue = parseFloat(yesterdayRevenueQuery.rows[0].sum);
 
   //Monthly Sales For Line Chart
   const monthlySalesQuery = await db.query(`

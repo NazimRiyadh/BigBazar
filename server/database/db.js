@@ -1,8 +1,8 @@
 import pkg from "pg";
 
-const { Client } = pkg;
+const { Pool } = pkg;
 
-const db = new Client({
+const db = new Pool({
   user: process.env.DB_USER,
   host: process.env.DB_HOST,
   port: process.env.DB_PORT,
@@ -12,9 +12,9 @@ const db = new Client({
 
 try {
   await db.connect();
-  console.log("Connected to the database");
+  console.log("Connected to the database pool");
 } catch (error) {
-  console.log("Error connecting to the database", error);
+  console.log("Error connecting to the database pool", error);
   process.exit(1);
 }
 

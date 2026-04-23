@@ -1,9 +1,9 @@
 import ErrorHandler from "../middlewares/errorMiddleware.js";
-import { catchAsyncMiddleware } from "./catchAsyncMiddleware.js";
+import { catchAsyncErrors } from "./catchAsyncMiddleware.js";
 import jwt from "jsonwebtoken";
 import db from "../database/db.js";
 
-export const isAuthenticated = catchAsyncMiddleware(async (req, res, next) => {
+export const isAuthenticated = catchAsyncErrors(async (req, res, next) => {
   const { token } = req.cookies;
   if (!token) {
     return next(new ErrorHandler("Please login to access this resource", 401));

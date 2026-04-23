@@ -1,9 +1,9 @@
 import ErrorHandler from "../middlewares/errorMiddleware.js";
-import { catchAsyncMiddleware } from "../middlewares/catchAsyncMiddleware.js";
+import { catchAsyncErrors } from "../middlewares/catchAsyncMiddleware.js";
 import db from "../database/db.js";
 import { v2 as cloudinary } from "cloudinary";
 
-export const createProduct = catchAsyncMiddleware(async (req, res, next) => {
+export const createProduct = catchAsyncErrors(async (req, res, next) => {
   const { name, description, price, category, stock } = req.body;
   if (!name || !description || !price || !category || !stock) {
     return next(new ErrorHandler("Please enter all the fields", 400));
@@ -48,11 +48,15 @@ export const createProduct = catchAsyncMiddleware(async (req, res, next) => {
   });
 });
 
-export const fetchAllProducts = catchAsyncMiddleware(async (req, res, next) => {
+export const fetchAllProducts = catchAsyncErrors(async (req, res, next) => {
   const { availability, price, category, ratings, search } = req.query;
   const page = parseInt(req.query.page) || 1;
-  const limit = 10;
-  const offset = (page - 1) * limit;
+  const limit = parseInt(req.query.limit) || 10;
+
+  const safePage = Math.max(1, page);
+  const safeLimit = Math.min(50, Math.max(1, limit));
+
+  const offset = (safePage - 1) * safeLimit;
 
   const conditions = [];
   let values = [];
@@ -115,7 +119,7 @@ export const fetchAllProducts = catchAsyncMiddleware(async (req, res, next) => {
   const totalProducts = parseInt(totalProductsResult.rows[0].count);
 
   paginationPlaceholders.limit = `$${index}`;
-  values.push(limit);
+  values.push(safeLimit);
   index++;
 
   paginationPlaceholders.offset = `$${index}`;
@@ -172,7 +176,7 @@ export const fetchAllProducts = catchAsyncMiddleware(async (req, res, next) => {
   });
 });
 
-export const updateProduct = catchAsyncMiddleware(async (req, res, next) => {
+export const updateProduct = catchAsyncErrors(async (req, res, next) => {
   const { productId } = req.params;
   const { name, description, price, category, stock } = req.body;
 
@@ -199,7 +203,7 @@ export const updateProduct = catchAsyncMiddleware(async (req, res, next) => {
   });
 });
 
-export const deleteProduct = catchAsyncMiddleware(async (req, res, next) => {
+export const deleteProduct = catchAsyncErrors(async (req, res, next) => {
   const { productId } = req.params;
   const product = await db.query(`SELECT * FROM products WHERE id=$1`, [
     productId,
@@ -227,29 +231,16 @@ export const deleteProduct = catchAsyncMiddleware(async (req, res, next) => {
   });
 });
 
-export const fetchSingleProduct = catchAsyncMiddleware(
-  async (req, res, next) => {
-    const { productId } = req.params;
+export const fetchSingleProduct = catchAsyncErrors(async (req, res, next) => {
+  const { productId } = req.params;
 
-    const result = await db.query(
-      `
-      SELECT 
-        p.*,
-        COALESCE(
-          (SELECT jsonb_agg(                          
-              jsonb_build_object(                     
-                'review_id', r.id,
-                'rating', r.rating,
-                'comment', r.comment,
-                'created_at', r.created_at,           
-                'reviewer', jsonb_build_object(
-                  'id', u.id,
-                  'name', u.name,
-                  'avatar', u.avatar
-                )
-              )
-              ORDER BY r.created_at DESC                
-           )
+  const result = await db.query(
+    `
+      SELECT p.*,COALESCE(
+        (SELECT jsonb_agg(jsonb_build_object('review_id', r.id,'rating', 
+        r.rating,'comment', r.comment,'created_at', r.created_at,'reviewer', 
+        jsonb_build_object('id', u.id,'name', u.name,'avatar', u.avatar))
+          ORDER BY r.created_at DESC)
            FROM reviews r
            LEFT JOIN users u ON r.user_id = u.id
            WHERE r.product_id = p.id
@@ -259,33 +250,31 @@ export const fetchSingleProduct = catchAsyncMiddleware(
       FROM products p
       WHERE p.id = $1;
       `,
-      [productId],
+    [productId],
+  );
+
+  const product = result.rows[0];
+
+  if (!product) {
+    return next(
+      new ErrorResponse(`Product not found with id: ${productId}`, 404),
     );
+  }
 
-    const product = result.rows[0];
+  res.status(200).json({
+    success: true,
+    message: "Product fetched successfully.",
+    product: product,
+  });
+});
 
-    if (!product) {
-      return next(
-        new ErrorResponse(`Product not found with id: ${productId}`, 404),
-      );
-    }
-
-    res.status(200).json({
-      success: true,
-      message: "Product fetched successfully.",
-      product: product,
-    });
-  },
-);
-
-export const postProductReview = catchAsyncMiddleware(
-  async (req, res, next) => {
-    const { productId } = req.params;
-    const { rating, comment } = req.body;
-    if (!rating || !comment) {
-      return next(new ErrorHandler("Please enter all the fields", 400));
-    }
-    const purchasedQuery = `
+export const postProductReview = catchAsyncErrors(async (req, res, next) => {
+  const { productId } = req.params;
+  const { rating, comment } = req.body;
+  if (!rating || !comment) {
+    return next(new ErrorHandler("Please enter all the fields", 400));
+  }
+  const purchasedQuery = `
     SELECT oi.product_id
     FROM order_items oi
     JOIN orders o ON o.id = oi.order_id
@@ -295,47 +284,46 @@ export const postProductReview = catchAsyncMiddleware(
     AND p.payment_status = 'Paid'
     LIMIT 1 
     `;
-    const purchased = await db.query(purchasedQuery, [req.user.id, productId]);
-    if (!purchased.rows.length) {
-      return next(new ErrorHandler("You have not purchased this product", 403));
-    }
-    const existingReviewQuery = `
+  const purchased = await db.query(purchasedQuery, [req.user.id, productId]);
+  if (!purchased.rows.length) {
+    return next(new ErrorHandler("You have not purchased this product", 403));
+  }
+  const existingReviewQuery = `
     SELECT * FROM reviews WHERE user_id = $1 AND product_id = $2
     `;
-    const existingReview = await db.query(existingReviewQuery, [
-      req.user.id,
-      productId,
-    ]);
-    if (existingReview.rows.length) {
-      review = await db.query(
-        `UPDATE reviews SET rating=$1,comment=$2 WHERE user_id=$3 AND product_id=$4 RETURNING *`,
-        [rating, comment, req.user.id, productId],
-      );
-    } else {
-      const review = await db.query(
-        `INSERT INTO reviews (user_id, product_id, rating, comment) VALUES ($1, $2, $3, $4) RETURNING *`,
-        [req.user.id, productId, rating, comment],
-      );
-    }
+  const existingReview = await db.query(existingReviewQuery, [
+    req.user.id,
+    productId,
+  ]);
+  if (existingReview.rows.length) {
+    review = await db.query(
+      `UPDATE reviews SET rating=$1,comment=$2 WHERE user_id=$3 AND product_id=$4 RETURNING *`,
+      [rating, comment, req.user.id, productId],
+    );
+  } else {
+    const review = await db.query(
+      `INSERT INTO reviews (user_id, product_id, rating, comment) VALUES ($1, $2, $3, $4) RETURNING *`,
+      [req.user.id, productId, rating, comment],
+    );
+  }
 
-    const averageRatingQuery = `
+  const averageRatingQuery = `
     SELECT AVG(rating) FROM reviews WHERE product_id = $1
     `;
-    const averageRating = await db.query(averageRatingQuery, [productId]);
-    const updatedProduct = await db.query(
-      `UPDATE products SET ratings=$1 WHERE id=$2 RETURNING *`,
-      [averageRating.rows[0].avg, productId],
-    );
+  const averageRating = await db.query(averageRatingQuery, [productId]);
+  const updatedProduct = await db.query(
+    `UPDATE products SET ratings=$1 WHERE id=$2 RETURNING *`,
+    [averageRating.rows[0].avg, productId],
+  );
 
-    res.status(201).json({
-      success: true,
-      message: "Review posted successfully",
-      review: review.rows[0],
-    });
-  },
-);
+  res.status(201).json({
+    success: true,
+    message: "Review posted successfully",
+    review: review.rows[0],
+  });
+});
 
-export const deleteReview = catchAsyncMiddleware(async (req, res, next) => {
+export const deleteReview = catchAsyncErrors(async (req, res, next) => {
   const { productId } = req.params;
 
   const review = await db.query(
