@@ -296,7 +296,7 @@ export const fetchSingleProduct = catchAsyncErrors(async (req, res, next) => {
 
   if (!product) {
     return next(
-      new ErrorResponse(`Product not found with id: ${productId}`, 404),
+      new ErrorHandler(`Product not found with id: ${productId}`, 404),
     );
   }
 
@@ -334,13 +334,14 @@ export const postProductReview = catchAsyncErrors(async (req, res, next) => {
     req.user.id,
     productId,
   ]);
+  let review;
   if (existingReview.rows.length) {
     review = await db.query(
       `UPDATE reviews SET rating=$1,comment=$2 WHERE user_id=$3 AND product_id=$4 RETURNING *`,
       [rating, comment, req.user.id, productId],
     );
   } else {
-    const review = await db.query(
+    review = await db.query(
       `INSERT INTO reviews (user_id, product_id, rating, comment) VALUES ($1, $2, $3, $4) RETURNING *`,
       [req.user.id, productId, rating, comment],
     );
@@ -386,6 +387,6 @@ export const deleteReview = catchAsyncErrors(async (req, res, next) => {
   res.status(200).json({
     success: true,
     message: "Review deleted successfully",
-    review: updateProduct.rows[0],
+    review: review.rows[0],
   });
 });

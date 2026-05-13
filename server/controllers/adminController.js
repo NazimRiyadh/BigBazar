@@ -47,7 +47,7 @@ export const getAllUsers = catchAsyncErrors(async (req, res, next) => {
 });
 
 export const deleteUser = catchAsyncErrors(async (req, res, next) => {
-  const { id } = req.params;
+  const { userId: id } = req.params;
 
   const userResult = await db.query(
     `SELECT id, avatar FROM users WHERE id = $1`,
@@ -103,7 +103,7 @@ export const dashboardStats = catchAsyncErrors(async (req, res, next) => {
   const previousMonthEnd = new Date(today.getFullYear(), today.getMonth(), 0);
 
   const totalRevenueAllTimeQuery = await db.query(`
-    SELECT SUM(total_price, 0) FROM orders WHERE paid_at IS NOT NULL    
+    SELECT COALESCE(SUM(total_price), 0) FROM orders WHERE paid_at IS NOT NULL    
     `);
   const totalRevenueAllTime =
     parseFloat(totalRevenueAllTimeQuery.rows[0].sum) || 0;
@@ -132,7 +132,7 @@ export const dashboardStats = catchAsyncErrors(async (req, res, next) => {
   // Today's Revenue
   const todayRevenueQuery = await db.query(
     `
-    SELECT SUM(total_price,0) FROM orders WHERE created_at::date = $1 AND paid_at IS NOT NULL
+    SELECT COALESCE(SUM(total_price), 0) FROM orders WHERE created_at::date = $1 AND paid_at IS NOT NULL
     `,
     [todayDate],
   );
@@ -141,7 +141,7 @@ export const dashboardStats = catchAsyncErrors(async (req, res, next) => {
   // Yesterday's Revenue
   const yesterdayRevenueQuery = await db.query(
     `
-    SELECT SUM(total_price,0) FROM orders WHERE created_at::date = $1 AND paid_at IS NOT NULL  
+    SELECT COALESCE(SUM(total_price), 0) FROM orders WHERE created_at::date = $1 AND paid_at IS NOT NULL  
     `,
     [yesterdayDate],
   );
